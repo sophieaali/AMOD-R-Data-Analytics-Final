@@ -1,0 +1,1431 @@
+---
+title: "AMOD 5250H - Final Project"
+author: "Sophie Ali"
+output: 
+  html_notebook:
+    toc: true
+    toc_float: true
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE, warn.conflicts = FALSE)
+
+if (!require("pacman")) {
+      install.packages("pacman", dependencies=TRUE, repos='http://cran.rstudio.com/')
+      library(pacman)
+}
+install.packages("gridExtra")
+
+# packages used in this report:
+pacman::p_load("ggplot2", "rstatix", "readr", "gridExtra")
+
+options(tidyverse.quiet = TRUE)
+library(tidyverse)
+```
+
+
+## Introduction
+
+There is a lot of talk of the 'Gender Pay Gap' around America; women are generally considered to be paid less than men. The purpose of this report is to examine this gender pay gap using the American Community Survey (ACS) to determine whether there is a statistical difference between wages of men and women in America, and if there is, how large the gap is. This study uses data solely from the ACS as the data is trustworthy, represents the population of America, and contains many variables to factor in to ensure income is tested fairly. To this extent, Age, Job, Hours Worked, and Weeks Worked are all factors that are considered to fully ensure that the potential Income Gap is correctly measured. 
+
+### About the American Community Survey
+
+The ACS is produced by the U.S. Census Bureau who use this data for policy advisement. In addition to their own personal use of this data, they also provide this data free of charge to the public - files are accessible through the U.S. Census Bureau’s “PUMS Data” Web page. This data, provided in the form of a Public Use Microdata Sample (PUMS), includes data on social, economic, housing, and demographic data, collected every year. 
+  The data set has a sample size of 3.5 million observations but represents a population of 15 million.
+  This is due to the fact that the ACS PUMS is a weighted sample - a weighting variable is provided within the dataset. Population weights are used to generate statistics about individuals that make up the US population. 
+  The US Census Bureau ensures that this dataset is devoid entirely of personalized data – measures are taken to protect confidentiality within the ACS PUMS including:
+  
+  * Using only a subset of the full ACS sample to create the PUMS.
+  
+  * Excluding names, addresses, and any information that could be used to identify a specific housing unit, group quarters unit, or person. 
+  
+  * “Swapping” (or exchanging) a small number of records with similar records from neighboring areas.
+  
+  * Top-coding or bottom-coding answers to selected variables. Top-coding and bottom-coding involves truncating extreme values for certain variables. A list of top-coded and bottom-coded values is available on the Census Bureau’s PUMS Technical Documentation Web page.
+  
+  * Limiting the geographic areas that can be identified in the PUMS. Data are available for the nation, regions, divisions, states, and Public Use Microdata Areas (PUMAs). 
+  
+The data this survey encompasses is very broad; the dataset has over 250 variables. Because of this large size, the data is split into 2 parts, one for characteristics of each person and one for characteristics of each housing unit. Characteristics for Puerto Rico are also in a separate file. For this report, data is analyzed solely from the person-record data, with the Puerto Rico data left out. 
+
+Data for the ACS is collected by the U.S. Census Bureau every year, and they therefore produce a 1-year and 5-year PUMS every year. This report uses the 5-year PUMS, which is a combination of 5 1-year PUMS files. This data is split into 4 different files to help with computer processing overload. Then, the US Census Bureau recodes the ACS data into entirely only numerical data. This is because numerical data takes up less space than string data, so all the columns are coded into numbers representing the data.
+
+The R code that was used  to load in all the data, preprocess and clean the dataset, and then recode all the numerical variables into more meaningful values  can be found in the Appendix at the end. 
+
+Next, since the data is collected over a 5-year period, the time value of money needs to be accounted for. As we are analyzing the wage gap between genders, there needs to be a transformation of the original data to  mutate the financial data columns, accounting for the time value of money. The code for these last 2 steps can be found in the Appendix. 
+
+Finally, for the purpose of this report, since I am studying the differences in the working population of the United States, I can drop any rows of individuals who are not over 17 years of age and did not work full-time for all of last year. I also drop any individuals who did not report their Occupation title and for the sake of comparing like-for-like data, anyone who is not a born US citizen. 
+
+
+```{r}
+load(file = "person_df.RData")
+```
+
+
+This new data set has `r ncol(person.df)` columns which are `r attributes(person.df)$names`. 
+
+The number of observations or rows this data set has is `r format(nrow(person.df), big.mark = ",")` however, once weightings are taken into consideration, this data set actually represents a sample of `r format(sum(person.df$"Person Weighting"), big.mark = ",")` US Citizens. 
+
+## Data Exploration
+
+```{r}
+ggplot(person.df) +
+  geom_bar(aes(x = Division, weight = `Person Weighting`, fill = Gender))+
+  ggtitle("Population by Gender and Division") + 
+  theme(axis.text.x = element_text(angle = 55)) + 
+  scale_y_continuous(labels = scales::comma) +
+  scale_fill_manual(values=c("steelblue", "hotpink"))
+```
+The above bar chart presents the count of the weighted sample by the Divisions within the US and by Gender. Here we can see that there is a relatively even split between men and women across the United States. 
+
+```{r}
+t1 <- person.df %>%
+  filter(Age > 17) %>%
+  group_by(Gender, Age.bins) %>%
+  summarise(AvgIncome = format(mean(`Total Person's Income`, na.rm = T), big.mark = ",")) %>%
+  spread(Gender, AvgIncome)
+
+t2 <- person.df %>%
+  filter(Age > 17) %>%
+  group_by(Gender, Age.bins) %>%
+  summarise(AvgSalary = format(mean(`Wage/Salary Income Past 12 Months`, na.rm = T), big.mark = ",")) %>%
+  spread(Gender, AvgSalary)
+t3 <- person.df %>%
+  filter(Age > 17) %>%
+  group_by(Gender, Age.bins) %>%
+  summarise(AvgSelfInc = format(mean(`Self-employment Income Past 12 Months`, na.rm = T), big.mark = ",")) %>%
+  spread(Gender, AvgSelfInc)
+t4 <- person.df %>%
+  filter(Age > 17) %>%
+  group_by(Gender, `Educational Attainment`) %>%
+  summarise(AvgIncome = format(mean(`Total Person's Income`, na.rm = T), big.mark = ",")) %>%
+  spread(Gender, AvgIncome)
+t5 <- person.df %>%
+  filter(Age > 17) %>%
+  group_by(Gender, `Educational Attainment`) %>%
+  summarise(AvgSalary = format(mean(`Wage/Salary Income Past 12 Months`, na.rm = T), big.mark = ",")) %>%
+  spread(Gender, AvgSalary)
+t6 <- person.df %>%
+  filter(Age > 17) %>%
+  group_by(Gender, `Educational Attainment`) %>%
+  summarise(AvgSelfInc = format(mean(`Self-employment Income Past 12 Months`, na.rm = T), big.mark = ",")) %>%
+  spread(Gender, AvgSelfInc)
+
+
+
+
+knitr::kable(
+  list(t1, t4),
+  caption = 'Average Total Income by Gender',
+  booktabs = TRUE, valign = 't'
+)
+
+knitr::kable(
+  list(t2, t5),
+  caption = 'Average Wage/Salary by Gender',
+  booktabs = TRUE, valign = 't'
+)
+
+knitr::kable(
+  list(t3, t6),
+  caption = 'Average Self-Employment by Gender',
+  booktabs = TRUE, valign = 't'
+)
+```
+The above tables present the breakdown of income of men vs women at every age group and at every education level. We can see here that at every age group or every education level, men earn more than women in their wages, in self-employment income and in total income.  
+
+
+Next, before any statistical tests can be run, I checked the distribution of the data. The below histograms demonstrate that there are some extreme outliers at Wage/Salary Income, Self-Employment Income and Total Income, giving the distributions an extreme right skew. These outliers need to be dealt with before any statistical tests can be done.
+
+```{r}
+hist1 <- ggplot(person.df) +
+  geom_histogram(aes(`Wage/Salary Income Past 12 Months`, weight = `Person Weighting`), color="slategray", fill="slategray3") +
+  scale_y_continuous(labels = scales::comma) +
+  scale_x_continuous(labels = scales::comma) +
+  ggtitle("Salary Distribution")
+
+hist2 <- ggplot(person.df) +
+  geom_histogram(aes(`Self-employment Income Past 12 Months`, weight = `Person Weighting`), color="slategray", fill="slategray3") +
+  scale_y_continuous(labels = scales::comma) +
+  scale_x_continuous(labels = scales::comma) +
+  ggtitle("Self-Employment Income Distribution")
+
+hist3 <- ggplot(person.df) +
+  geom_histogram(aes(`Total Person's Income`, weight = `Person Weighting`), color="slategray", fill="slategray3") +
+  scale_y_continuous(labels = scales::comma) +
+  scale_x_continuous(labels = scales::comma) +
+  ggtitle("Total Income Distribution")
+
+grid.arrange(hist1, hist2, hist3, ncol = 2)
+
+```
+ 
+
+## Methodology
+
+
+To remove outliers, I am deleting any data points that are outside of the interquartile range for the Wage/Salary Income, the Self-Employment Income and Total Income. The histograms from above are then run again to inspect the distribution of data points. 
+
+```{r}
+Q <- quantile(person.df$`Wage/Salary Income Past 12 Months`, probs=c(.25, .75), na.rm = T)
+iqr <- IQR(person.df$`Wage/Salary Income Past 12 Months`, na.rm = T)
+person.df <- subset(person.df, person.df$`Wage/Salary Income Past 12 Months` > (Q[1] - 1.5*iqr) & person.df$`Wage/Salary Income Past 12 Months` < (Q[2]+1.5*iqr))
+
+Q1 <- quantile(person.df$`Self-employment Income Past 12 Months`, probs=c(.25, .75), na.rm = T)
+iqr1 <- IQR(person.df$`Self-employment Income Past 12 Months`, na.rm = T)
+person.df <- subset(person.df, person.df$`Self-employment Income Past 12 Months` > (Q[1] - 1.5*iqr) & person.df$`Self-employment Income Past 12 Months` < (Q[2]+1.5*iqr))
+
+Q2 <- quantile(person.df$`Total Person's Income`, probs=c(.25, .75), na.rm = T)
+iqr2 <- IQR(person.df$`Total Person's Income`, na.rm = T)
+person.df <- subset(person.df, person.df$`Total Person's Income` > (Q[1] - 1.5*iqr) & person.df$`Total Person's Income` < (Q[2]+1.5*iqr))
+
+hist1 <- ggplot(person.df) +
+  geom_histogram(aes(`Wage/Salary Income Past 12 Months`, weight = `Person Weighting`), color="slategray", fill="slategray3") +
+  scale_y_continuous(labels = scales::comma) +
+  scale_x_continuous(labels = scales::comma) +
+  ggtitle("Salary Distribution")
+
+hist2 <- ggplot(person.df) +
+  geom_histogram(aes(`Self-employment Income Past 12 Months`, weight = `Person Weighting`), color="slategray", fill="slategray3") +
+  scale_y_continuous(labels = scales::comma) +
+  scale_x_continuous(labels = scales::comma) +
+  ggtitle("Self-Employment Income Distribution")
+
+hist3 <- ggplot(person.df) +
+  geom_histogram(aes(`Total Person's Income`, weight = `Person Weighting`), color="slategray", fill="slategray3") +
+  scale_y_continuous(labels = scales::comma) +
+  scale_x_continuous(labels = scales::comma) +
+  ggtitle("Total Income Distribution")
+
+grid.arrange(hist1, hist2, hist3, ncol = 2)
+```
+Total Income still has a bit of a right skew to the data but there are enough points in the dataset to use it regardless.
+Wage/Salary distribution has a large number of people earning no income at all, which seems unusual at first, but when we look at Self-Employment Income, we can see that a lot of the people earning no Self-Employment are also not earning any Wage/Salary Income. This is confirmed after inspecting the dataset. 
+
+
+```{r}
+box1 <- ggplot(person.df) +
+  geom_boxplot(aes(`Wage/Salary Income Past 12 Months`), color="slategray", fill="slategray3") +
+  scale_y_continuous(labels = scales::comma) +
+  ggtitle("Salary Distribution")
+
+box2 <- ggplot(person.df) +
+  geom_boxplot(aes(`Self-employment Income Past 12 Months`), color="slategray", fill="slategray3") +
+  scale_y_continuous(labels = scales::comma) +
+  ggtitle("Self-Employment Income Distribution")
+
+box3 <- ggplot(person.df) +
+  geom_boxplot(aes(`Total Person's Income`), color="slategray", fill="slategray3") +
+  scale_y_continuous(labels = scales::comma) +
+  ggtitle("Total Income Distribution")
+
+grid.arrange(box1, box2, box3, ncol = 2)
+```
+The above presents the 3 different types of income in box plots. Because the self-employment income distribution is still very odd, with most people not earning anything from self-employment, I decided to pivot my study to only look at people who have a full-time paying position.
+
+```{r}
+person.df <- person.df %>%
+  filter(`Class of Worker` <= 5)
+
+ggplot(person.df) +
+  geom_histogram(aes(`Wage/Salary Income Past 12 Months`), color="slategray", fill="slategray3") +
+  scale_y_continuous(labels = scales::comma) +
+  scale_x_continuous(labels = scales::comma) +
+  ggtitle("Salary Distribution")
+```
+
+As you can see above, after dropping self-employed workers and volunteers this correctly removes the peak at 0 for the Wage/Salary distribution.
+
+
+
+Lastly, the following tables and graphs explore the most popular jobs in the United States. This data will be used later to analyze whether there are differences in pay between men and women in some of these popular occupations. 
+
+```{r}
+top.10 <- person.df %>%
+  group_by(Occupation) %>%
+  summarise(Count = sum(`Person Weighting`)) %>%
+  top_n(10)
+top.10
+```
+
+```{r}
+person.df %>%
+  filter(Occupation %in% top.10$Occupation) %>%
+  ggplot() +
+  geom_bar(aes(Occupation, weight = `Person Weighting`, fill = Gender)) +
+  ggtitle("Top 10 Occupations in the US - Gender Proportions")  + 
+  scale_y_continuous(labels = scales::comma) +
+  theme(axis.text.x = element_text(angle = 15)) +
+  scale_fill_manual(values=c("steelblue", "hotpink"))
+```
+
+This bar chart demonstrates that within the top 10 occupations in the US, there are some jobs that are heavily dominated by men (such as Truck Drivers and Laborer) and some jobs that are heavily dominated by women (such as Secretaries and Teachers). There are also some jobs that are relatively evenly split between men and women (such as Retail Sales Supervisors and Retail Salespersons). The analysis later will look into whether there is a statistical difference in pay between women and men for all of these occupations or only some. 
+
+```{r}
+qqnorm(person.df$`Wage/Salary Income Past 12 Months`)
+```
+The above Q-Q Plot confirms a normal 'heavy-tailed' distribution.
+
+```{r}
+mu <- person.df %>% group_by(Gender) %>% summarise(wage.mean = mean(`Wage/Salary Income Past 12 Months`))
+ggplot(person.df, aes(x=`Wage/Salary Income Past 12 Months`, color=Gender)) +
+  geom_histogram(fill="white", alpha=0.5, position="identity") +
+  scale_color_manual(values=c("blue", "deeppink2")) +
+  scale_y_continuous(labels = scales::comma) +
+  scale_x_continuous(labels = scales::comma) +
+  ggtitle("Men vs Women Wage/Salary Distribution") +
+  geom_vline(data=mu, aes(xintercept=wage.mean, color=Gender),
+             linetype="dashed")
+```
+ The above histogram demonstrates that there are more women than men at lower paid positions and more men than women in higher paid positions generally throughout the United States. 
+ 
+ The following plots breaks this down by education level. 
+ 
+```{r}
+ggplot(person.df, aes(x=`Wage/Salary Income Past 12 Months`, color=Gender)) +
+  geom_histogram(fill="white", alpha=0.5, position="identity") +
+  scale_color_manual(values=c("blue", "deeppink2")) +
+  scale_y_continuous(labels = scales::comma) +
+  scale_x_continuous(labels = scales::comma) +
+  ggtitle("Men vs Women Wage/Salary Distribution by Education Level") +
+  facet_wrap(~`Educational Attainment`) 
+```
+ The above charts demonstrate that at almost every education level, men tend to be in higher earning positions than women. 
+ 
+
+```{r}
+ggplot(person.df, aes(x=`Wage/Salary Income Past 12 Months`, color=Gender)) +
+  geom_histogram(fill="white", alpha=0.5, position="identity") +
+  scale_color_manual(values=c("blue", "deeppink2")) +
+  scale_y_continuous(labels = scales::comma) +
+  scale_x_continuous(labels = scales::comma) +
+  ggtitle("Men vs Women Wage/Salary Distribution by Age Group") +
+  facet_wrap(~Age.bins) 
+```
+  The above charts demonstrate that at every age group, men tend to be in higher earning positions than women. 
+
+Next, I look at the average wage for men and women at each of the top 10 occupations in the US.  
+
+
+```{r}
+person.df %>%
+  filter(Occupation == "EDU-Elementary And Middle School Teachers" | 
+           Occupation == "MED-Registered Nurses" |
+           Occupation == "CLN-Janitors And Building Cleaners" |
+           Occupation == "SAL-First-Line Supervisors Of Retail Sales Workers"	|
+           Occupation == "SAL-Cashiers"	|
+           Occupation == "SAL-Retail Salespersons" |
+           Occupation == "OFF-Customer Service Representatives" |
+           Occupation == "OFF-Secretaries And Administrative Assistants, Except Legal, Medial, And Executive" |	
+           Occupation == "TRN-Driver/Sales Workers And Truck Drivers"	|
+           Occupation == "TRN-Laborers And Freight, Stock, And Material Movers, Hand") %>%
+  group_by(Gender, Occupation, ) %>%
+  summarise(AvgSalary = mean(`Wage/Salary Income Past 12 Months`)) %>%
+  ggplot() +
+  geom_bar(aes(y = AvgSalary, x = Gender, fill = Gender), stat = "identity", alpha = 0.7) +
+  scale_fill_manual(values=c("blue", "deeppink2")) +
+  facet_wrap(~Occupation)
+```
+
+## Findings
+
+
+I initially wanted to test whether there is a significant wage gap between genders for the entire dataset. Unfortunately the sample size is too large to run a t-test without running into issues in generating this report. Therefore, I am going to run a Welch's Independent Samples t-Test on each of the top 5 occupations in the US, separately. 
+
+The hypothesis test for each of the top 5 occupations in the US:
+
+H0: x̄1 = x̄2
+    The average wage between men and women at each occupation is not statistically different. 
+
+
+H1: x̄1 ≠ x̄2
+    The average wage between men and women at each occupation is statistically different. 
+
+### Elementary And Middle School Teachers
+
+```{r}
+(meantest1 <- person.df %>%
+  filter(Occupation == "EDU-Elementary And Middle School Teachers") %>%
+  group_by(Gender) %>%
+  get_summary_stats(`Wage/Salary Income Past 12 Months`, type = "mean_sd"))
+person.df %>%
+  filter(Occupation == "EDU-Elementary And Middle School Teachers") %>%
+  levene_test(`Wage/Salary Income Past 12 Months` ~ Gender)
+(ttest1 <- person.df %>%
+  filter(Occupation == "EDU-Elementary And Middle School Teachers") %>%
+  t_test(`Wage/Salary Income Past 12 Months` ~ Gender, var.equal = FALSE) %>%
+  add_significance())
+person.df %>%
+  filter(Occupation == "EDU-Elementary And Middle School Teachers") %>%
+  cohens_d(`Wage/Salary Income Past 12 Months` ~ Gender, var.equal = FALSE)
+```
+For `r top.10$Occupation[1]`, the mean wage/salary of men in the US from 2014-2018 was \$`r format(meantest1$mean[meantest1$Gender == "Male"], big.mark = ",")` (SD = \$`r format(meantest1$sd[meantest1$Gender == "Male"], big.mark = ",")`), and the mean wage/salary of women was \$`r format(meantest1$mean[meantest1$Gender == "Female"], big.mark = ",")` (SD = \$`r format(meantest1$sd[meantest1$Gender == "Female"], big.mark = ",")`).  A levene's test demonstrated non homogeneity of variances between the two groups, so the t-test is modified accordingly. A Welch’s independent samples t-test showed that the mean difference in wages between men and women is statistically significant, t(`r format(ttest1$df, big.mark = ",")`) = `r round(ttest1$statistic, 4)`, p < 0.0001, with men tending to have a higher wage/salary than women in `r top.10$Occupation[1]` positions. 
+
+
+The error bars in the chart below demonstrate the distance between the 2 means.
+```{r}
+teachersummary <- person.df %>% 
+  filter(Occupation == "EDU-Elementary And Middle School Teachers") %>%
+  group_by(Gender) %>%
+  summarize(AvgSalary=mean(`Wage/Salary Income Past 12 Months`),
+              wage.sd=sd(`Wage/Salary Income Past 12 Months`),
+              Lower=AvgSalary - 2 * wage.sd / sqrt(NROW(`Wage/Salary Income Past 12 Months`)),
+              Upper=AvgSalary + 2 * wage.sd / sqrt(NROW(`Wage/Salary Income Past 12 Months`))
+    )
+
+ggplot(teachersummary, aes(x=AvgSalary, y=Gender)) + geom_point() +
+    geom_errorbarh(aes(xmin=Lower, xmax=Upper), height=.2)
+```
+
+### Registered Nurses
+```{r}
+(meantest2 <- person.df %>%
+  filter(Occupation == "MED-Registered Nurses") %>%
+  group_by(Gender) %>%
+  get_summary_stats(`Wage/Salary Income Past 12 Months`, type = "mean_sd"))
+person.df %>%
+  filter(Occupation == "MED-Registered Nurses") %>%
+  levene_test(`Wage/Salary Income Past 12 Months` ~ Gender)
+(ttest2 <- person.df %>%
+  filter(Occupation == "MED-Registered Nurses") %>%
+  t_test(`Wage/Salary Income Past 12 Months` ~ Gender, var.equal = FALSE) %>%
+  add_significance())
+person.df %>%
+  filter(Occupation == "MED-Registered Nurses") %>%
+  cohens_d(`Wage/Salary Income Past 12 Months` ~ Gender, var.equal = FALSE)
+```
+For `r top.10$Occupation[2]`, the mean wage/salary of men in the US from 2014-2018 was \$`r format(meantest2$mean[meantest2$Gender == "Male"], big.mark = ",")` (SD = \$`r format(meantest2$sd[meantest2$Gender == "Male"], big.mark = ",")`), and the mean wage/salary of women was \$`r format(meantest2$mean[meantest2$Gender == "Female"], big.mark = ",")` (SD = \$`r format(meantest2$sd[meantest2$Gender == "Female"], big.mark = ",")`).  A levene's test demonstrated non homogeneity of variances between the two groups, so the t-test is modified accordingly. A Welch’s independent samples t-test showed that the mean difference in wages between men and women is statistically significant, t(`r format(ttest2$df, big.mark = ",")`) = `r round(ttest2$statistic, 4)`, p < 0.0001, with men tending to have a higher wage/salary than women in `r top.10$Occupation[2]` positions. 
+
+
+The error bars in the chart below demonstrate the distance between the 2 means.
+```{r}
+nursesummary <- person.df %>% 
+  filter(Occupation == "MED-Registered Nurses") %>%
+  group_by(Gender) %>%
+  summarize(AvgSalary=mean(`Wage/Salary Income Past 12 Months`),
+              wage.sd=sd(`Wage/Salary Income Past 12 Months`),
+              Lower=AvgSalary - 2 * wage.sd / sqrt(NROW(`Wage/Salary Income Past 12 Months`)),
+              Upper=AvgSalary + 2 * wage.sd / sqrt(NROW(`Wage/Salary Income Past 12 Months`))
+    )
+
+ggplot(nursesummary, aes(x=AvgSalary, y=Gender)) + geom_point() +
+    geom_errorbarh(aes(xmin=Lower, xmax=Upper), height=.2)
+```
+
+### Janitors And Building Cleaners
+```{r}
+(meantest3 <- person.df %>%
+  filter(Occupation == "CLN-Janitors And Building Cleaners") %>%
+  group_by(Gender) %>%
+  get_summary_stats(`Wage/Salary Income Past 12 Months`, type = "mean_sd"))
+person.df %>%
+  filter(Occupation == "CLN-Janitors And Building Cleaners") %>%
+  levene_test(`Wage/Salary Income Past 12 Months` ~ Gender)
+(ttest3 <- person.df %>%
+  filter(Occupation == "CLN-Janitors And Building Cleaners") %>%
+  t_test(`Wage/Salary Income Past 12 Months` ~ Gender, var.equal = FALSE) %>%
+  add_significance())
+person.df %>%
+  filter(Occupation == "CLN-Janitors And Building Cleaners") %>%
+  cohens_d(`Wage/Salary Income Past 12 Months` ~ Gender, var.equal = FALSE)
+```
+For `r top.10$Occupation[3]`, the mean wage/salary of men in the US from 2014-2018 was \$`r format(meantest3$mean[meantest3$Gender == "Male"], big.mark = ",")` (SD = \$`r format(meantest3$sd[meantest3$Gender == "Male"], big.mark = ",")`), and the mean wage/salary of women was \$`r format(meantest3$mean[meantest3$Gender == "Female"], big.mark = ",")` (SD = \$`r format(meantest3$sd[meantest3$Gender == "Female"], big.mark = ",")`).  A levene's test demonstrated non homogeneity of variances between the two groups, so the t-test is modified accordingly. A Welch’s independent samples t-test showed that the mean difference in wages between men and women is statistically significant, t(`r format(ttest3$df, big.mark = ",")`) = `r round(ttest3$statistic, 4)`, p < 0.0001, with men tending to have a higher wage/salary than women in `r top.10$Occupation[3]` positions. 
+
+The error bars in the chart below demonstrate the distance between the 2 means.
+```{r}
+janitorsummary <- person.df %>% 
+  filter(Occupation == "CLN-Janitors And Building Cleaners") %>%
+  group_by(Gender) %>%
+  summarize(AvgSalary=mean(`Wage/Salary Income Past 12 Months`),
+              wage.sd=sd(`Wage/Salary Income Past 12 Months`),
+              Lower=AvgSalary - 2 * wage.sd / sqrt(NROW(`Wage/Salary Income Past 12 Months`)),
+              Upper=AvgSalary + 2 * wage.sd / sqrt(NROW(`Wage/Salary Income Past 12 Months`))
+    )
+
+ggplot(janitorsummary, aes(x=AvgSalary, y=Gender)) + geom_point() +
+    geom_errorbarh(aes(xmin=Lower, xmax=Upper), height=.2)
+```
+
+
+### First-Line Supervisors Of Retail Sales Workers
+```{r}
+(meantest4 <- person.df %>%
+  filter(Occupation == "SAL-First-Line Supervisors Of Retail Sales Workers") %>%
+  group_by(Gender) %>%
+  get_summary_stats(`Wage/Salary Income Past 12 Months`, type = "mean_sd"))
+person.df %>%
+  filter(Occupation == "SAL-First-Line Supervisors Of Retail Sales Workers") %>%
+  levene_test(`Wage/Salary Income Past 12 Months` ~ Gender)
+(ttest4 <- person.df %>%
+  filter(Occupation == "SAL-First-Line Supervisors Of Retail Sales Workers") %>%
+  t_test(`Wage/Salary Income Past 12 Months` ~ Gender, var.equal = FALSE) %>%
+  add_significance())
+person.df %>%
+  filter(Occupation == "SAL-First-Line Supervisors Of Retail Sales Workers") %>%
+  cohens_d(`Wage/Salary Income Past 12 Months` ~ Gender, var.equal = FALSE)
+```
+For `r top.10$Occupation[4]`, the mean wage/salary of men in the US from 2014-2018 was \$`r format(meantest4$mean[meantest4$Gender == "Male"], big.mark = ",")` (SD = \$`r format(meantest4$sd[meantest4$Gender == "Male"], big.mark = ",")`), and the mean wage/salary of women was \$`r format(meantest4$mean[meantest4$Gender == "Female"], big.mark = ",")` (SD = \$`r format(meantest4$sd[meantest4$Gender == "Female"], big.mark = ",")`).  A levene's test demonstrated non homogeneity of variances between the two groups, so the t-test is modified accordingly. A Welch’s independent samples t-test showed that the mean difference in wages between men and women is statistically significant, t(`r format(ttest4$df, big.mark = ",")`) = `r round(ttest4$statistic, 4)`, p < 0.0001, with men tending to have a higher wage/salary than women in `r top.10$Occupation[4]` positions. 
+
+The error bars in the chart below demonstrate the distance between the 2 means.
+```{r}
+supervisorsummary <- person.df %>% 
+  filter(Occupation == "SAL-First-Line Supervisors Of Retail Sales Workers") %>%
+  group_by(Gender) %>%
+  summarize(AvgSalary=mean(`Wage/Salary Income Past 12 Months`),
+              wage.sd=sd(`Wage/Salary Income Past 12 Months`),
+              Lower=AvgSalary - 2 * wage.sd / sqrt(NROW(`Wage/Salary Income Past 12 Months`)),
+              Upper=AvgSalary + 2 * wage.sd / sqrt(NROW(`Wage/Salary Income Past 12 Months`))
+    )
+
+ggplot(supervisorsummary, aes(x=AvgSalary, y=Gender)) + geom_point() +
+    geom_errorbarh(aes(xmin=Lower, xmax=Upper), height=.2)
+```
+
+
+### Cashiers
+```{r}
+(meantest5 <- person.df %>%
+  filter(Occupation == "SAL-Cashiers") %>%
+  group_by(Gender) %>%
+  get_summary_stats(`Wage/Salary Income Past 12 Months`, type = "mean_sd"))
+person.df %>%
+  filter(Occupation == "SAL-Cashiers") %>%
+  levene_test(`Wage/Salary Income Past 12 Months` ~ Gender)
+(ttest5 <- person.df %>%
+  filter(Occupation == "SAL-Cashiers") %>%
+  t_test(`Wage/Salary Income Past 12 Months` ~ Gender, var.equal = FALSE) %>%
+  add_significance())
+person.df %>%
+  filter(Occupation == "SAL-Cashiers") %>%
+  cohens_d(`Wage/Salary Income Past 12 Months` ~ Gender, var.equal = FALSE)
+```
+For `r top.10$Occupation[5]`, the mean wage/salary of men in the US from 2014-2018 was \$`r format(meantest5$mean[meantest5$Gender == "Male"], big.mark = ",")` (SD = \$`r format(meantest5$sd[meantest5$Gender == "Male"], big.mark = ",")`), and the mean wage/salary of women was \$`r format(meantest5$mean[meantest5$Gender == "Female"], big.mark = ",")` (SD = \$`r format(meantest5$sd[meantest5$Gender == "Female"], big.mark = ",")`).  A levene's test demonstrated non homogeneity of variances between the two groups, so the t-test is modified accordingly. A Welch’s independent samples t-test showed that the mean difference in wages between men and women is statistically significant, t(`r format(ttest5$df, big.mark = ",")`) = `r round(ttest5$statistic, 4)`, p < 0.0001, with men tending to have a higher wage/salary than women in `r top.10$Occupation[5]` positions. 
+
+The error bars in the chart below demonstrate the distance between the 2 means. 
+```{r}
+cashiersummary <- person.df %>% 
+  filter(Occupation == "SAL-Cashiers") %>%
+  group_by(Gender) %>%
+  summarize(AvgSalary=mean(`Wage/Salary Income Past 12 Months`),
+              wage.sd=sd(`Wage/Salary Income Past 12 Months`),
+              Lower=AvgSalary - 2 * wage.sd / sqrt(NROW(`Wage/Salary Income Past 12 Months`)),
+              Upper=AvgSalary + 2 * wage.sd / sqrt(NROW(`Wage/Salary Income Past 12 Months`))
+    )
+
+ggplot(cashiersummary, aes(x=AvgSalary, y=Gender)) + geom_point() +
+    geom_errorbarh(aes(xmin=Lower, xmax=Upper), height=.2)
+```
+
+## Discussion
+The results of my study were unamimous. In every single statistical test I ran, men came out on top as the higher earner for any job. Each of the Welch's Independent Samples t-Tests came back with a significant p-value. The magnitude of the pay gap varied from negligible to moderate; for Janitors and Retail Supervisors the pay gap was moderate, for teachers and nurses the pay gap was small, and for cashiers the pay gap was negligible. 
+
+This study did not account for length of time in position, so that could be a significant predictor to why there is such a stark difference in pay gap. It could be that men potentially stay in their positions longer, resulting in raises over time, while women take time off to raise a family, losing out on those pay raises.
+
+It would be interesting to extend this study to other types of occupations, looking at occupations that require higher education or grouping occupations by industry and finding out whether some industries pay more equally than others. 
+
+While I am confident in the tests that I ran and the conclusions made, I think this study needs to be extended further using the points made above before presenting the results to policy makers. Despite these shortcomings in the study, because I used the 5 most common jobs in the US, we can say with confidence that the Gender Pay Gap is prominent across the country. 
+
+
+## Appendix
+
+### Part 1: Preprocessing and cleaning steps
+
+The below code demonstrates how the data was loaded in, and unnecessary columns were dropped before combining all 4 files into one master dataset. Column names are then given more meaningful descriptions.
+
+```{r,eval=FALSE}
+library(readr)
+
+psam_pusa <- read_csv("csv_pus/psam_pusa.csv", 
+                      col_types = cols(SERIALNO = col_number()))
+psam_pusa <- psam_pusa %>%
+  select(SERIALNO, PWGTP, ADJINC, DIVISION, REGION, ST, AGEP, SEX, CIT, COW, MAR, RELP, SCHL, SEMP, WAGP, WKHP, WKW, NATIVITY, PINCP, OCCP)
+
+psam_pusb <- read_csv("csv_pus/psam_pusb.csv", 
+                      col_types = cols(SERIALNO = col_number()))
+psam_pusb <- psam_pusb %>%
+  select(SERIALNO, PWGTP, ADJINC, DIVISION, REGION, ST, AGEP, SEX, CIT, COW, MAR, RELP, SCHL, SEMP, WAGP, WKHP, WKW, NATIVITY, PINCP, OCCP)
+
+psam_pusc <- read_csv("csv_pus/psam_pusc.csv", 
+                      col_types = cols(SERIALNO = col_number()))
+psam_pusc <- psam_pusc %>%
+  select(SERIALNO, PWGTP, ADJINC, DIVISION, REGION, ST, AGEP, SEX, CIT, COW, MAR, RELP, SCHL, SEMP, WAGP, WKHP, WKW, NATIVITY, PINCP, OCCP)
+
+psam_pusd <- read_csv("csv_pus/psam_pusd.csv", 
+                      col_types = cols(SERIALNO = col_number()))
+psam_pusd <- psam_pusd %>%
+  select(SERIALNO, PWGTP, ADJINC, DIVISION, REGION, ST, AGEP, SEX, CIT, COW, MAR, RELP, SCHL, SEMP, WAGP, WKHP, WKW, NATIVITY, PINCP, OCCP)
+
+person.df <- rbind(psam_pusa, psam_pusb, psam_pusc, psam_pusd)
+
+rm(psam_pusa)
+rm(psam_pusb)
+rm(psam_pusc)
+rm(psam_pusd)
+
+
+person.df <- person.df %>%
+  rename("Division" = "DIVISION",
+         "Dollar Adjustment" = "ADJINC",
+         "Region" = "REGION",
+         "State" = "ST",
+         "Person Weighting" = "PWGTP",
+         "Age" = "AGEP",
+         "Citizenship Status" = "CIT",
+         "Class of Worker" = "COW",
+         "Marital status" = "MAR",
+         "Relationship" = "RELP", 
+         "Educational Attainment" = "SCHL",
+         "Self-employment Income Past 12 Months" = "SEMP",
+         "Gender" = "SEX",
+         "Wage/Salary Income Past 12 Months" = "WAGP",
+         "Usual Hours Worked per Week Last Year" = "WKHP",
+         "Weeks Worked Last 12 Months" = "WKW",
+         "Occupation" = "OCCP",
+         "Nativity" = "NATIVITY",
+         "Total Person's Income" = "PINCP")
+```
+
+
+
+Using the data dictionary provided by The US Census Bureau, the following code recodes all the variables into more meaningful values. 
+```{r, eval=FALSE}
+recode.division <- c("New England" = 1, 
+                     "Middle Atlantic" = 2,
+                     "East North Central" = 3,
+                     "West North Central" = 4, 
+                     "South Atlantic" = 5,
+                     "East South Central" = 6,
+                     "West South Central" = 7,
+                     "Mountain" = 8,
+                     "Pacific" = 9)
+person.df$Division <- factor(person.df$Division, levels = recode.division, labels = names(recode.division))
+
+recode <- c(Northeast = 1, Midwest = 2, South = 3, West = 4)
+person.df$Region <- factor(person.df$Region, levels = recode, labels = names(recode))
+
+recode.state <- c(Alabama = "01", 
+                  Alaska = "02", 
+                  Arizona = "04", 
+                  Arkansas = "05", 
+                  California = "06", 
+                  Colorado = "08", 
+                  Connecticut = "09",
+                  Delaware = 10,
+                  "District of Columbia" = 11,
+                  Florida = 12, 
+                  Georgia = 13,
+                  Hawaii = 15, 
+                  Idaho = 16, 
+                  Illinois = 17, 
+                  Indiana = 18, 
+                  Iowa = 19, 
+                  Kansas = 20, 
+                  Kentucky = 21, 
+                  Louisiana = 22, 
+                  Maine = 23, 
+                  Maryland = 24, 
+                  Massachusetts = 25, 
+                  Michigan = 26, 
+                  Minnesota = 27, 
+                  Mississippi = 28, 
+                  Missouri = 29,
+                  Montana = 30,
+                  Nebraska = 31, 
+                  Nevada = 32, 
+                  "New Hampshire" = 33, 
+                  "New Jersey" = 34, 
+                  "New Mexico" = 35, 
+                  "New York" = 36, 
+                  "North Carolina" = 37,
+                  "North Dakota" = 38, 
+                  Ohio = 39,
+                  Oklahoma = 40, 
+                  Oregon = 41, 
+                  Pennsylvania = 42, 
+                  "Rhode Island" = 44, 
+                  "South Carolina" = 45,  
+                  "South Dakota" = 46, 
+                  Tennessee = 47, 
+                  Texas = 48, 
+                  Utah = 49, 
+                  Vermont = 50, 
+                  Virginia = 51, 
+                  Washington = 53, 
+                  "West Virginia" = 54, 
+                  Wisconsin = 55,
+                  Wyoming = 56, 
+                  "Puerto Rico" = 72)
+person.df$State <- factor(person.df$State, levels = recode.state, labels = names(recode.state))
+
+recode.cit <- c("Born in the U.S." = 1, 
+                "Born in Puerto Rico, Guam, the U.S. Virgin Islands, or the Northern Marianas" = 2, 
+                "Born abroad of American parent(s)" = 3, "U.S. citizen by naturalization" = 4, 
+                "Not a citizen of the U.S." = 5)
+person.df$`Citizenship Status` <- factor(person.df$`Citizenship Status`, levels = recode.cit, labels = names(recode.cit))
+
+recode.mar <- c(Married = 1, Widowed = 2, Divorced = 3, Separated = 4, "Never married" = 5)
+person.df$`Marital status` <- factor(person.df$`Marital status`, levels = recode.mar, labels = names(recode.mar))
+
+recode.sex <- c(Male = 1, Female = 2)
+person.df$Gender <- factor(person.df$Gender, levels = recode.sex, labels = names(recode.sex))
+
+recode.nativity <- c(Native = 1, "Foreign Born" = 2)
+person.df$Nativity <- factor(person.df$Nativity, levels = recode.nativity, labels = names(recode.nativity))
+
+recode.schl <- c("No schooling completed" = "01",
+                 "preschool" = "02",
+                 Kindergarten = "03",
+                 "Grade 1" = "04",
+                 "Grade 2" = "05",
+                 "Grade 3" = "06",
+                 "Grade 4" = "07",
+                 "Grade 5" = "08",
+                 "Grade 6" = "09",
+                 "Grade 7" = 10,
+                 "Grade 8" = 11,
+                 "Grade 9" = 12,
+                 "Grade 10" = 13,
+                 "Grade 11" = 14,
+                 "12th grade - no diploma" = 15, 
+                 "Regular high school diploma" = 16,
+                 "GED" = 17, 
+                 "Some college, but less than 1 year" = 18,
+                 "1 or more years of college credit, no degree" = 19,
+                 "Associate's degree" = 20,
+                 "Bachelor's degree" = 21,
+                 "Master's degree" = 22,
+                 "Professional degree beyond a bachelor's degree" = 23,
+                 "Doctorate degree" = 24)
+person.df$`Educational Attainment` <- factor(person.df$`Educational Attainment`, levels = recode.schl, labels = names(recode.schl))
+
+recode.relp <- c("Reference person" = "00",
+                 "Husband/wife" = "01", 
+                 "Biological son or daughter" = "02",
+                 "Adopted son or daughter" = "03", 
+                 "Stepson or stepdaughter" = "04", 
+                 "Brother or sister" = "05",
+                 "Father or mother" = "06", 
+                 Grandchild = "07",
+                 "Parent-in-law" = "08",
+                 "Son-in-law or daughter-in-law" = "09",
+                 "Other relative" = 10, 
+                 "Roomer or boarder" = 11,
+                 "Housemate or roommate" = 12,
+                 "Unmarried partner" = 13,
+                 "Foster child" = 14,
+                 "Other nonrelative" = 15, 
+                 "Institutionalized group quarters" = 16,
+                 "Noninstitutionalized group quarters" = 17)
+person.df$Relationship <- factor(person.df$Relationship, levels = recode.relp, labels = names(recode.relp))
+
+recode.worked <- c("50 to 52 weeks" = 1,
+                   "48 to 49 weeks" = 2,
+                   "40 to 47 weeks" = 3,
+                   "27 to 39 weeks" = 4,
+                   "14 to 26 weeks" = 5,
+                   "14 weeks or less" = 6)
+person.df$`Weeks Worked Last 12 Months` <- factor(person.df$`Weeks Worked Last 12 Months`, levels = recode.worked, labels = names(recode.worked))
+
+recode.occp <- c("MGR-Chief Executives And Legislators" = 0010,
+                 "MGR-General And Operations Managers" = 0020,
+                 "MGR-Advertising And Promotions Managers" = 0040,
+                 "MGR-Marketing Managers" = 0051,
+                 "MGR-Sales Managers" = 0052,
+                 "MGR-Public Relations And Fundraising Managers" = 0060,
+                 "MGR-Administrative Services Managers" = 0101,
+                 "MGR-Facilities Managers" = 0102,
+                 "MGR-Computer And Information Systems Managers" = 0110,
+                 "MGR-Financial Managers" = 0120,
+                 "MGR-Compensation And Benefits Managers" = 0135,
+                 "MGR-Human Resources Managers" = 0136,
+                 "MGR-Training And Development Managers" = 0137,
+                 "MGR-Industrial Production Managers" = 0140,
+                 "MGR-Purchasing Managers" = 0150,
+                 "MGR-Transportation, Storage, And Distribution Managers" = 0160,
+                 "MGR-Farmers, Ranchers, And Other Agricultural Managers" = 0205,
+                 "MGR-Construction Managers" = 0220,
+                 "MGR-Education And Childcare Administrators" = 0230,
+                 "MGR-Architectural And Engineering Managers" = 0300,
+                 "MGR-Food Service Managers" = 0310,
+                 "MGR-Entertainment and Recreation Managers" = 0335,
+                 "MGR-Lodging Managers" = 0340,
+                 "MGR-Medical And Health Services Managers" = 0350,
+                 "MGR-Natural Sciences Managers" = 0360,
+                 "MGR-Property, Real Estate, And Community Association Managers" = 0410,
+                 "MGR-Social And Community Service Managers" = 0420,
+                 "MGR-Emergency Management Directors" = 0425,
+                 "MGR-Other Managers" = 0440,
+                 "BUS-Agents And Business Managers Of Artists, Performers, And Athletes" = 0500,
+                 "BUS-Buyers And Purchasing Agents, Farm Products" = 0510,
+                 "BUS-Wholesale And Retail Buyers, Except Farm Products" = 0520,
+                 "BUS-Purchasing Agents, Except Wholesale, Retail, And Farm Products" = 0530,
+                 "BUS-Claims Adjusters, Appraisers, Examiners, And Investigators" = 0540,
+                 "BUS-Compliance Officers" = 0565,
+                 "BUS-Cost Estimators" = 0600,
+                 "BUS-Human Resources Workers" = 0630,
+                 "BUS-Compensation, Benefits, And Job Analysis Specialists" = 0640,
+                 "BUS-Training And Development Specialists" = 0650,
+                 "BUS-Logisticians" = 0700,
+                 "BUS-Project Management Specialists" = 0705,
+                 "BUS-Management Analysts" = 0710,
+                 "BUS-Meeting, Convention, And Event Planners" = 0725,
+                 "BUS-Fundraisers" = 0726,
+                 "BUS-Market Research Analysts And Marketing Specialists" = 0735,
+                 "BUS-Business Operations Specialists, All Other" = 0750,
+                 "FIN-Accountants And Auditors" = 0800,
+                 "FIN-Property Appraisers and Assessors" = 0810,
+                 "FIN-Budget Analysts" = 0820,
+                 "FIN-Credit Analysts" = 0830,
+                 "FIN-Financial And Investment Analysts" = 0845,
+                 "FIN-Personal Financial Advisors" = 0850,
+                 "FIN-Insurance Underwriters" = 0860,
+                 "FIN-Financial Examiners" = 0900,
+                 "FIN-Credit Counselors And Loan Officers" = 0910,
+                 "FIN-Tax Examiners And Collectors, And Revenue Agents" = 0930,
+                 "FIN-Tax Preparers" = 0940,
+                 "FIN-Other Financial Specialists" = 0960,
+                 "CMM-Computer And Information Research Scientists" = 1005,
+                 "CMM-Computer Systems Analysts" = 1006,
+                 "CMM-Information Security Analysts" = 1007,
+                 "CMM-Computer Programmers" = 1010,
+                 "CMM-Software Developers" = 1021,
+                 "CMM-Software Quality Assurance Analysts and Testers" = 1022,
+                 "CMM-Web Developers" = 1031,
+                 "CMM-Web And Digital Interface Designers" = 1032,
+                 "CMM-Computer Support Specialists" = 1050,
+                 "CMM-Database Administrators and Architects" = 1065,
+                 "CMM-Network And Computer Systems Administrators" = 1105,
+                 "CMM-Computer Network Architects" = 1106,
+                 "CMM-Computer Occupations, All Other" = 1108,
+                 "CMM-Actuaries" = 1200,
+                 "CMM-Operations Research Analysts" = 1220,
+                 "CMM-Other Mathematical Science Occupations" = 1240,
+                 "ENG-Architects, Except Landscape And Naval" = 1305,
+                 "ENG-Landscape Architects" = 1306,
+                 "ENG-Surveyors, Cartographers, And Photogrammetrists" = 1310,
+                 "ENG-Aerospace Engineers" = 1320,
+                 "ENG-Biomedical And Agricultural Engineers" = 1340,
+                 "ENG-Chemical Engineers" = 1350,
+                 "ENG-Civil Engineers" = 1360,
+                 "ENG-Computer Hardware Engineers" = 1400,
+                 "ENG-Electrical And Electronics Engineers" = 1410,
+                 "ENG-Environmental Engineers" = 1420,
+                 "ENG-Industrial Engineers, Including Health And Safety" = 1430,
+                 "ENG-Marine Engineers And Naval Architects" = 1440,
+                 "ENG-Materials Engineers" = 1450,
+                 "ENG-Mechanical Engineers" = 1460,
+                 "ENG-Petroleum, Mining And Geological Engineers, Including Mining Safety Engineers" = 1520,
+                 "ENG-Other Engineers" = 1530,
+                 "ENG-Architectural And Civil Drafters" = 1541,
+                 "ENG-Other Drafters" = 1545,
+                 "ENG-Electrical And Electronic Engineering Technologists and Technicians" = 1551,
+                 "Other Engineering Technologists And Technicians, Except Drafters" = 1555,
+                 "ENG-Surveying And Mapping Technicians" = 1560,
+                 "SCI-Agricultural And Food Scientists" = 1600,
+                 "SCI-Biological Scientists" = 1610,
+                 "SCI-Conservation Scientists And Foresters" = 1640,
+                 "SCI-Other Life Scientists" = 1650,
+                 "SCI-Astronomers And Physicists" = 1700,
+                 "SCI-Atmospheric And Space Scientists" = 1710,
+                 "SCI-Chemists And Materials Scientists" = 1720,
+                 "SCI-Environmental Scientists And Specialists, Including Health" = 1745,
+                 "SCI-Geoscientists And Hydrologists, Except Geographers" = 1750,
+                 "SCI-Physical Scientists, All Other" = 1760,
+                 "SCI-Economists" = 1800,
+                 "SCI-Clinical And Counseling Psychologists" = 1821,
+                 "SCI-School Psychologists" = 1822,
+                 "SCI-Other Psychologists" = 1825,
+                 "SCI-Urban And Regional Planners" = 1840,
+                 "SCI-Other Social Scientists" = 1860,
+                 "SCI-Agricultural And Food Science Technicians" = 1900,
+                 "SCI-Biological Technicians" = 1910,
+                 "SCI-Chemical Technicians" = 1920,
+                 "SCI-Environmental Science and Geoscience Technicians, And Nuclear Technicians" = 1935,
+                 "SCI-Other Life, Physical, And Social Science Technicians" = 1970,
+                 "SCI-Occupational Health And Safety Specialists and Technicians" = 1980,
+                 "CMS-Substance Abuse And Behavioral Disorder Counselors" = 2001,
+                 "CMS-Educational, Guidance, And Career Counselors And Advisors" = 2002,
+                 "CMS-Marriage And Family Therapists" = 2003,
+                 "CMS-Mental Health Counselors" = 2004,
+                 "CMS-Rehabilitation Counselors" = 2005,
+                 "CMS-Counselors, All Other" = 2006,
+                 "CMS-Child, Family, And School Social Workers" = 2011,
+                 "CMS-Healthcare Social Workers" = 2012,
+                 "CMS-Mental Health And Substance Abuse Social Workers" = 2013,
+                 "CMS-Social Workers, All Other" = 2014,
+                 "CMS-Probation Officers And Correctional Treatment Specialists" = 2015,
+                 "CMS-Social And Human Service Assistants" = 2016,
+                 "CMS-Other Community and Social Service Specialists" = 2025,
+                 "CMS-Clergy" = 2040,
+                 "CMS-Directors, Religious Activities And Education" = 2050,
+                 "CMS-Religious Workers, All Other" = 2060,
+                 "LGL-Lawyers, And Judges, Magistrates, And Other Judicial Workers" = 2100,
+                 "LGL-Judicial Law Clerks" = 2105,
+                 "LGL-Paralegals And Legal Assistants" = 2145,
+                 "LGL-Title Examiners, Abstractors, and Searchers" = 2170,
+                 "LGL-Legal Support Workers, All Other" = 2180,
+                 "EDU-Postsecondary Teachers" = 2205,
+                 "EDU-Preschool And Kindergarten Teachers" = 2300,
+                 "EDU-Elementary And Middle School Teachers" = 2310,
+                 "EDU-Secondary School Teachers" = 2320,
+                 "EDU-Special Education Teachers" = 2330,
+                 "EDU-Tutors" = 2350,
+                 "EDU-Other Teachers and Instructors" = 2360,
+                 "EDU-Archivists, Curators, And Museum Technicians" = 2400,
+                 "EDU-Librarians And Media Collections Specialists" = 2435,
+                 "EDU-Library Technicians" = 2440,
+                 "EDU-Teaching Assistants" = 2545,
+                 "EDU-Other Educational Instruction And Library Workers" = 2555,
+                 "ENT-Artists And Related Workers" = 2600,
+                 "ENT-Commercial And Industrial Designers" = 2631,
+                 "ENT-Fashion Designers" = 2632,
+                 "ENT-Floral Designers" = 2633,
+                 "ENT-Graphic Designers" = 2634,
+                 "ENT-Interior Designers" = 2635,
+                 "ENT-Merchandise Displayers And Windows Trimmers" = 2636,
+                 "ENT-Other Designers" = 2640,
+                 "ENT-Actors" = 2700,
+                 "ENT-Producers And Directors" = 2710,
+                 "ENT-Athletes and Sports Competitors" = 2721,
+                 "ENT-Coaches and Scouts" = 2722,
+                 "ENT-Umpires, Referees, And Other Sports Officials" = 2723,
+                 "ENT-Dancers And Choreographers" = 2740,
+                 "ENT-Music Directors and Composers" = 2751,
+                 "ENT-Musicians and Singers" = 2752,
+                 "ENT-Disc Jockeys, Except Radio" = 2755,
+                 "ENT-Entertainers And Performers, Sports and Related Workers, All Other" = 2770,
+                 "ENT-Broadcast Announcers And Radio Disc Jockeys" = 2805,
+                 "ENT-News Analysts, Reporters And Correspondents" = 2810,
+                 "ENT-Public Relations Specialists" = 2825,
+                 "ENT-Editors" = 2830,
+                 "ENT-Technical Writers" = 2840,
+                 "ENT-Writers And Authors" = 2850,
+                 "ENT-Interpreters and Translators" = 2861,
+                 "ENT-Court Reporters and Simultaneous Captioners" = 2862,
+                 "ENT-Media And Communication Workers, All Other" = 2865,
+                 "ENT-Other Media And Communication Equipment Workers" = 2905,
+                 "ENT-Photographers" = 2910,
+                 "ENT-Television, Video, And Motion Picture Camera Operators And Editors" = 2920,
+                 "MED-Chiropractors" = 3000,
+                 "MED-Dentists" = 3010,
+                 "MED-Dietitians And Nutritionists" = 3030,
+                 "MED-Optometrists" = 3040,
+                 "MED-Pharmacists" = 3050,
+                 "MED-Physicians" = 3090,
+                 "MED-Surgeons" = 3100,
+                 "MED-Physician Assistants" = 3110,
+                 "MED-Podiatrists" = 3120,
+                 "MED-Audiologists" = 3140,
+                 "MED-Occupational Therapists" = 3150,
+                 "MED-Physical Therapists" = 3160,
+                 "MED-Radiation Therapists" = 3200,
+                 "MED-Recreational Therapists" = 3210,
+                 "MED-Respiratory Therapists" = 3220,
+                 "MED-Speech-Language Pathologists" = 3230,
+                 "MED-Other Therapists" = 3245,
+                 "MED-Veterinarians" = 3250,
+                 "MED-Registered Nurses" = 3255,
+                 "MED-Nurse Anesthetists" = 3256,
+                 "MED-Nurse Practitioners, And Nurse Midwives" = 3258,
+                 "MED-Acupuncturists" = 3261,
+                 "MED-Healthcare Diagnosing Or Treating Practitioners, All Other" = 3270,
+                 "MED-Clinical Laboratory Technologists And Technicians" = 3300,
+                 "MED-Dental Hygienists" = 3310,
+                 "MED-Cardiovascular Technologists and Technicians" = 3321,
+                 "MED-Diagnostic Medical Sonographers" = 3322,
+                 "MED-Radiologic Technologists And Technicians" = 3323,
+                 "MED-Magnetic Resonance Imaging Technologists" = 3324,
+                 "MED-Nuclear Medicine Technologists and Medical Dosimetrists" = 3330,
+                 "MED-Emergency Medical Technicians" = 3401,
+                 "MED-Paramedics" = 3402,
+                 "MED-Pharmacy Technicians" = 3421,
+                 "MED-Psychiatric Technicians" = 3422,
+                 "MED-Surgical Technologists" = 3423,
+                 "MED-Veterinary Technologists and Technicians" = 3424,
+                 "MED-Dietetic Technicians And Ophthalmic Medical Technicians" = 3430,
+                 "MED-Licensed Practical And Licensed Vocational Nurses" = 3500,
+                 "MED-Medical Records Specialists" = 3515,
+                 "MED-Opticians, Dispensing" = 3520,
+                 "MED-Miscellaneous Health Technologists and Technicians" = 3545,
+                 "MED-Other Healthcare Practitioners and Technical Occupations" = 3550,
+                 "HLS-Home Health Aides" = 3601,
+                 "HLS-Personal Care Aides" = 3602,
+                 "HLS-Nursing Assistants" = 3603,
+                 "HLS-Orderlies and Psychiatric Aides" = 3605,
+                 "HLS-Occupational Therapy Assistants And Aides" = 3610,
+                 "HLS-Physical Therapist Assistants And Aides" = 3620,
+                 "HLS-Massage Therapists" = 3630,
+                 "HLS-Dental Assistants" = 3640,
+                 "HLS-Medical Assistants" = 3645,
+                 "HLS-Medical Transcriptionists" = 3646,
+                 "HLS-Pharmacy Aides" = 3647,
+                 "HLS-Veterinary Assistants And Laboratory Animal Caretakers" = 3648,
+                 "HLS-Phlebotomists" = 3649,
+                 "HLS-Other Healthcare Support Workers" = 3655,
+                 "PRT-First-Line Supervisors Of Correctional Officers" = 3700,
+                 "PRT-First-Line Supervisors Of Police And Detectives" = 3710,
+                 "PRT-First-Line Supervisors Of Fire Fighting And Prevention Workers" = 3720,
+                 "PRT-First-Line Supervisors of Security And Protective Service Workers, All Other" = 3725,
+                 "PRT-Firefighters" = 3740,
+                 "PRT-Fire Inspectors" = 3750,
+                 "PRT-Bailiffs" = 3801,
+                 "PRT-Correctional Officers and Jailers" = 3802,
+                 "PRT-Detectives And Criminal Investigators" = 3820,
+                 "PRT-Fish And Game Wardens And Parking Enforcement Officers" = 3840,
+                 "PRT-Police Officers" = 3870,
+                 "PRT-Animal Control Workers" = 3900,
+                 "PRT-Private Detectives And Investigators" = 3910,
+                 "PRT-Security Guards And Gaming Surveillance Officers" = 3930,
+                 "PRT-Crossing Guards And Flaggers" = 3940,
+                 "PRT-Transportation Security Screeners" = 3945,
+                 "PRT-School Bus Monitors" = 3946,
+                 "PRT-Other Protective Service Workers" = 3960,
+                 "EAT-Chefs And Head Cooks" = 4000,
+                 "EAT-First-Line Supervisors Of Food Preparation And Serving Workers" = 4010,
+                 "EAT-Cooks" = 4020,
+                 "EAT-Food Servers, Nonrestaurant" =  412,
+                 "EAT-Food Preparation Workers" = 4030,
+                 "EAT-Bartenders" = 4040,
+                 "EAT-Fast Food And Counter Workers" = 4055,
+                 "EAT-Waiters And Waitresses" = 4110,
+                 "EAT-Dining Room And Cafeteria Attendants And Bartender Helpers" = 4130,
+                 "EAT-Dishwashers" = 4140,
+                 "EAT-Hosts And Hostesses, Restaurant, Lounge, And Coffee Shop" = 4150,
+                 "EAT-Food Preparation and Serving Related Workers, All Other" = 4160,
+                 "CLN-First-Line Supervisors Of Housekeeping And Janitorial Workers" = 4200,
+                 "CLN-First-Line Supervisors Of Landscaping, Lawn Service, And Groundskeeping Workers" = 4210,
+                 "CLN-Janitors And Building Cleaners" = 4220,
+                 "CLN-Maids And Housekeeping Cleaners" = 4230,
+                 "CLN-Pest Control Workers" = 4240,
+                 "CLN-Landscaping And Groundskeeping Workers" = 4251,
+                 "CLN-Tree Trimmers and Pruners" = 4252,
+                 "CLN-Other Grounds Maintenance Workers" = 4255,
+                 "PRS-Supervisors Of Personal Care And Service Workers" = 4330,
+                 "PRS-Animal Trainers" = 4340,
+                 "PRS-Animal Caretakers" = 4350,
+                 "PRS-Gambling Services Workers" = 4400,
+                 "PRS-Ushers, Lobby Attendants, And Ticket Takers" = 4420,
+                 "PRS-Other Entertainment Attendants And Related Workers" = 4435,
+                 "PRS-Embalmers, Crematory Operators, And Funeral Attendants" = 4461,
+                 "PRS-Morticians, Undertakers, And Funeral Arrangers" = 4465,
+                 "PRS-Barbers" = 4500,
+                 "PRS-Hairdressers, Hairstylists, And Cosmetologists" = 4510,
+                 "PRS-Manicurists And Pedicurists" = 4521,
+                 "PRS-Skincare Specialists" = 4522,
+                 "PRS-Other Personal Appearance Workers" = 4525,
+                 "PRS-Baggage Porters, Bellhops, And Concierges" = 4530,
+                 "PRS-Tour And Travel Guides" = 4540,
+                 "PRS-Childcare Workers" = 4600,
+                 "PRS-Exercise Trainers And Group Fitness Instructors" = 4621,
+                 "PRS-Recreation Workers" = 4622,
+                 "PRS-Residential Advisors" = 4640,
+                 "PRS-Personal Care and Service Workers, All Other" = 4655,
+                 "SAL-First-Line Supervisors Of Retail Sales Workers" = 4700,
+                 "SAL-First-Line Supervisors Of Non-Retail Sales Workers" = 4710,
+                 "SAL-Cashiers" = 4720,
+                 "SAL-Counter And Rental Clerks" = 4740,
+                 "SAL-Parts Salespersons" = 4750,
+                 "SAL-Retail Salespersons" = 4760,
+                 "SAL-Advertising Sales Agents" = 4800,
+                 "SAL-Insurance Sales Agents" = 4810,
+                 "SAL-Securities, Commodities, And Financial Services Sales Agents" = 4820,
+                 "SAL-Travel Agents" = 4830,
+                 "SAL-Sales Representatives Of Services, Except Advertising, Insurance, Financial Services, And Travel" = 4840,
+                 "SAL-Sales Representatives, Wholesale And Manufacturing" = 4850,
+                 "SAL-Models, Demonstrators, And Product Promoters" = 4900,
+                 "SAL-Real Estate Brokers And Sales Agents" = 4920,
+                 "SAL-Sales Engineers" = 4930,
+                 "SAL-Telemarketers" = 4940,
+                 "SAL-Door-To-Door Sales Workers, News And Street Vendors, And Related Workers" = 4950,
+                 "SAL-Sales And Related Workers, All Other" = 4965,
+                 "OFF-First-Line Supervisors Of Office And Administrative Support Workers" = 5000,
+                 "OFF-Switchboard Operators, Including Answering Service" = 5010,
+                 "OFF-Telephone Operators" = 5020,
+                 "OFF-Communications Equipment Operators, All Other" = 5040,
+                 "OFF-Bill And Account Collectors" = 5100,
+                 "OFF-Billing And Posting Clerks" = 5110,
+                 "OFF-Bookkeeping, Accounting, And Auditing Clerks" = 5120,
+                 "OFF-Payroll And Timekeeping Clerks" = 5140,
+                 "OFF-Procurement Clerks" = 5150,
+                 "OFF-Tellers" = 5160,
+                 "OFF-Other Financial Clerks" = 5165,
+                 "OFF-Court, Municipal, And License Clerks" = 5220,
+                 "OFF-Credit Authorizers, Checkers, And Clerks" = 5230,
+                 "OFF-Customer Service Representatives" = 5240,
+                 "OFF-Eligibility Interviewers, Government Programs" = 5250,
+                 "OFF-File Clerks" = 5260,
+                 "OFF-Hotel, Motel, And Resort Desk Clerks" = 5300,
+                 "OFF-Interviewers, Except Eligibility And Loan" = 5310,
+                 "OFF-Library Assistants, Clerical" = 5320,
+                 "OFF-Loan Interviewers And Clerks" = 5330,
+                 "OFF-New Accounts Clerks" = 5340,
+                 "OFF-Correspondence Clerks And Order Clerks" = 5350,
+                 "OFF-Human Resources Assistants, Except Payroll And Timekeeping" = 5360,
+                 "OFF-Receptionists And Information Clerks" = 5400,
+                 "OFF-Reservation And Transportation Ticket Agents And Travel Clerks" = 5410,
+                 "OFF-Other Information And Records Clerks" = 5420,
+                 "OFF-Cargo And Freight Agents" = 5500,
+                 "OFF-Couriers And Messengers" = 5510,
+                 "OFF-Public Safety Telecommunicators" = 5521,
+                 "OFF-Dispatchers, Except Police, Fire, And Ambulance" = 5522,
+                 "OFF-Meter Readers, Utilities" = 5530,
+                 "OFF-Postal Service Clerks" = 5540,
+                 "OFF-Postal Service Mail Carriers" = 5550,
+                 "OFF-Postal Service Mail Sorters, Processors, And Processing Machine Operators" = 5560,
+                 "OFF-Production, Planning, And Expediting Clerks" = 5600,
+                 "OFF-Shipping, Receiving, And Inventory Clerks" = 5610,
+                 "OFF-Weighers, Measurers, Checkers, And Samplers, Recordkeeping" = 5630,
+                 "OFF-Executive Secretaries And Executive Administrative Assistants" = 5710,
+                 "OFF-Legal Secretaries and Administrative Assistants" = 5720,
+                 "OFF-Medical Secretaries and Administrative Assistants" = 5730,
+                 "OFF-Secretaries And Administrative Assistants, Except Legal, Medial, And Executive" = 5740,
+                 "OFF-Data Entry Keyers" = 5810,
+                 "OFF-Word Processors And Typists" = 5820,
+                 "OFF-Insurance Claims And Policy Processing Clerks" = 5840,
+                 "OFF-Mail Clerks And Mail Machine Operators, Except Postal Service" = 5850,
+                 "OFF-Office Clerks, General" = 5860,
+                 "OFF-Office Machine Operators, Except Computer" = 5900,
+                 "OFF-Proofreaders And Copy Markers" = 5910,
+                 "OFF-Statistical Assistants" = 5920,
+                 "OFF-Other Office And Administrative Support Workers" = 5940,
+                 "FFF-First-Line Supervisors Of Farming, Fishing, And Forestry Workers" = 6005,
+                 "FFF-Agricultural Inspectors" = 6010,
+                 "FFF-Graders And Sorters, Agricultural Products" = 6040,
+                 "FFF-Other Agricultural Workers" = 6050,
+                 "FFF-Fishing And Hunting Workers" = 6115,
+                 "FFF-Forest And Conservation Workers" = 6120,
+                 "FFF-Logging Workers" = 6130,
+                 "CON-First-Line Supervisors Of Construction Trades And Extraction Workers" = 6200,
+                 "CON-Boilermakers" = 6210,
+                 "CON-Brickmasons, Blockmasons, Stonemasons, And Reinforcing Iron And Rebar Workers" = 6220,
+                 "CON-Carpenters" = 6230,
+                 "CON-Cement Masons, Concrete Finishers, And Terrazzo Workers" = 6250,
+                 "CON-Construction Laborers" = 6260,
+                 "CON-Construction Equipment Operators" = 6305,
+                 "CON-Drywall Installers, Ceiling Tile Installers, And Tapers" = 6330,
+                 "CON-Electricians" = 6355,
+                 "CON-Glaziers" = 6360,
+                 "CON-Insulation Workers" = 6400,
+                 "CON-Painters and Paperhangers" = 6410,
+                 "CON-Pipelayers" = 6441,
+                 "CON-Plumbers, Pipefitters, And Steamfitters" = 6442,
+                 "CON-Plasterers And Stucco Masons" = 6460,
+                 "CON-Roofers" = 6515,
+                 "CON-Sheet Metal Workers" = 6520,
+                 "CON-Structural Iron And Steel Workers" = 6530,
+                 "CON-Solar Photovoltaic Installers" = 6540,
+                 "CON-Helpers, Construction Trades" = 6600,
+                 "CON-Construction And Building Inspectors" = 6660,
+                 "CON-Elevator Installers And Repairers" = 6700,
+                 "CON-Fence Erectors" = 6710,
+                 "CON-Hazardous Materials Removal Workers" = 6720,
+                 "CON-Highway Maintenance Workers" = 6730,
+                 "CON-Rail-Track Laying And Maintenance Equipment Operators" = 6740,
+                 "CON-Other Construction And Related Workers" = 6765,
+                 "EXT-Derrick, Rotary Drill, And Service Unit Operators, And Roustabouts, Oil, Gas, And Mining" = 6800,
+                 "EXT-Surface Mining Machine Operators And Earth Drillers" = 6825,
+                 "EXT-Explosives Workers, Ordnance Handling Experts, and Blasters" = 6835,
+                 "EXT-Underground Mining Machine Operators" = 6850,
+                 "EXT-Other Extraction Workers" = 6950,
+                 "RPR-First-Line Supervisors Of Mechanics, Installers, And Repairers" = 7000,
+                 "RPR-Computer, Automated Teller, And Office Machine Repairers" = 7010,
+                 "RPR-Radio And Telecommunications Equipment Installers And Repairers" = 7020,
+                 "RPR-Avionics Technicians" = 7030,
+                 "RPR-Electric Motor, Power Tool, And Related Repairers" = 7040,
+                 "RPR-Other Electrical And Electronic Equipment Mechanics, Installers, And Repairers." = 7100,
+                 "RPR-Electronic Home Entertainment Equipment Installers And Repairers" = 7120,
+                 "RPR-Security And Fire Alarm Systems Installers" = 7130,
+                 "RPR-Aircraft Mechanics And Service Technicians" = 7140,
+                 "RPR-Automotive Body And Related Repairers" = 7150,
+                 "RPR-Automotive Glass Installers And Repairers" = 7160,
+                 "RPR-Automotive Service Technicians And Mechanics" = 7200,
+                 "RPR-Bus And Truck Mechanics And Diesel Engine Specialists" = 7210,
+                 "RPR-Heavy Vehicle And Mobile Equipment Service Technicians And Mechanics" = 7220,
+                 "RPR-Small Engine Mechanics" = 7240,
+                 "RPR-Miscellaneous Vehicle And Mobile Equipment Mechanics, Installers, And Repairers" = 7260,
+                 "RPR-Control And Valve Installers And Repairers" = 7300,
+                 "RPR-Heating, Air Conditioning, And Refrigeration Mechanics And Installers" = 7315,
+                 "RPR-Home Appliance Repairers" = 7320,
+                 "RPR-Industrial And Refractory Machinery Mechanics" = 7330,
+                 "RPR-Maintenance And Repair Workers, General" = 7340,
+                 "RPR-Maintenance Workers, Machinery" = 7350,
+                 "RPR-Millwrights" = 7360,
+                 "RPR-Electrical Power-Line Installers And Repairers" = 7410,
+                 "RPR-Telecommunications Line Installers And Repairers" = 7420,
+                 "RPR-Precision Instrument And Equipment Repairers" = 7430,
+                 "RPR-Coin, Vending, And Amusement Machine Servicers And Repairers" = 7510,
+                 "RPR-Locksmiths And Safe Repairers" = 7540,
+                 "RPR-Riggers" = 7560,
+                 "RPR-Helpers--Installation, Maintenance, And Repair Workers" = 7610,
+                 "RPR-Other Installation, Maintenance, And Repair Workers" = 7640,
+                 "PRD-First-Line Supervisors Of Production And Operating Workers" = 7700,
+                 "PRD-Electrical, Electronics, And Electromechanical Assemblers" = 7720,
+                 "PRD-Engine And Other Machine Assemblers" = 7730,
+                 "PRD-Structural Metal Fabricators And Fitters" = 7740,
+                 "PRD-Other Assemblers And Fabricators" = 7750,
+                 "PRD-Bakers" = 7800,
+                 "PRD-Butchers And Other Meat, Poultry, And Fish Processing Workers" = 7810,
+                 "PRD-Food And Tobacco Roasting, Baking, And Drying Machine Operators And Tenders" = 7830,
+                 "PRD-Food Batchmakers" = 7840,
+                 "PRD-Food Cooking Machine Operators And Tenders" = 7850,
+                 "PRD-Food Processing Workers, All Other" = 7855,
+                 "PRD-Computer Numerically Controlled Tool Operators And Programmers" = 7905,
+                 "PRD-Forming Machine Setters, Operators, And Tenders, Metal .And Plastic" = 7925,
+                 "PRD-Cutting, Punching, And Press Machine Setters, Operators, And Tenders, Metal And Plastic" = 7950,
+                 "Grinding, Lapping, Polishing, And Buffing Machine Tool" = 8000,
+                 "PRD-Other Machine Tool Setters, Operators, And Tenders, Metal and Plastic" = 8025,
+                 "PRD-Machinists" = 8030,
+                 "PRD-Metal Furnace Operators, Tenders, Pourers, And Casters" = 8040,
+                 "PRD-Model Makers, Patternmakers, And Molding Machine Setters, Metal And Plastic" = 8100,
+                 "PRD-Tool And Die Makers" = 8130,
+                 "PRD-Welding, Soldering, And Brazing Workers" = 8140,
+                 "PRD-Other Metal Workers And Plastic Workers" = 8225,
+                 "PRD-Prepress Technicians And Workers" = 8250,
+                 "PRD-Printing Press Operators" = 8255,
+                 "PRD-Print Binding And Finishing Workers" = 8256,
+                 "PRD-Laundry And Dry-Cleaning Workers" = 8300,
+                 "PRD-Pressers, Textile, Garment, And Related Materials" = 8310,
+                 "PRD-Sewing Machine Operators" = 8320,
+                 "PRD-Shoe And Leather Workers" = 8335,
+                 "PRD-Tailors, Dressmakers, And Sewers" = 8350,
+                 "PRD-Textile Machine Setters, Operators, And Tenders" = 8365,
+                 "PRD-Upholsterers" = 8450,
+                 "PRD-Other Textile, Apparel, And Furnishings Workers" = 8465,
+                 "PRD-Cabinetmakers And Bench Carpenters" = 8500,
+                 "PRD-Furniture Finishers" = 8510,
+                 "PRD-Sawing Machine Setters, Operators, And Tenders, Wood" = 8530,
+                 "PRD-Woodworking Machine Setters, Operators, And Tenders, Except Sawing" = 8540,
+                 "PRD-Other Woodworkers" = 8555,
+                 "PRD-Power Plant Operators, Distributors, And Dispatchers" = 8600,
+                 "PRD-Stationary Engineers And Boiler Operators" = 8610,
+                 "PRD-Water And Wastewater Treatment Plant And System Operators" = 8620,
+                 "PRD-Miscellaneous Plant And System Operators" = 8630,
+                 "PRD-Chemical Processing Machine Setters, Operators, And Tenders" = 8640,
+                 "PRD-Crushing, Grinding, Polishing, Mixing, And Blending Workers" = 8650,
+                 "PRD-Cutting Workers" = 8710,
+                 "PRD-Extruding, Forming, Pressing, And Compacting Machine Setters, Operators, And Tenders" = 8720,
+                 "PRD-Furnace, Kiln, Oven, Drier, And Kettle Operators And Tenders" = 8730,
+                 "PRD-Inspectors, Testers, Sorters, Samplers, And Weighers" = 8740,
+                 "PRD-Jewelers And Precious Stone And Metal Workers" = 8750,
+                 "PRD-Dental And Ophthalmic Laboratory Technicians And Medical Appliance Technicians" = 8760,
+                 "PRD-Packaging And Filling Machine Operators And Tenders" = 8800,
+                 "PRD-Painting Workers" = 8810,
+                 "PRD-Photographic Process Workers And Processing Machine Operators" = 8830,
+                 "PRD-Adhesive Bonding Machine Operators And Tenders" = 8850,
+                 "PRD-Etchers And Engravers" = 8910,
+                 "PRD-Molders, Shapers, And Casters, Except Metal And Plastic" = 8920,
+                 "PRD-Paper Goods Machine Setters, Operators, And Tenders" = 8930,
+                 "PRD-Tire Builders" = 8940,
+                 "PRD-Helpers-Production Workers" = 8950,
+                 "PRD-Miscellaneous Production Workers, Including Equipment Operators And Tenders" = 8990,
+                 "TRN-Supervisors Of Transportation And Material Moving Workers" = 9005,
+                 "TRN-Aircraft Pilots And Flight Engineers" = 9030,
+                 "TRN-Air Traffic Controllers And Airfield Operations Specialists" = 9040,
+                 "TRN-Flight Attendants" = 9050,
+                 "TRN-Ambulance Drivers And Attendants, Except Emergency Medical Technicians" = 9110,
+                 "TRN-Bus Drivers, School" = 9121,
+                 "TRN-Bus Drivers, Transit And Intercity" = 9122,
+                 "TRN-Driver/Sales Workers And Truck Drivers" = 9130,
+                 "TRN-Shuttle Drivers And Chauffeurs" = 9141,
+                 "TRN-Taxi Drivers" = 9142,
+                 "TRN-Motor Vehicle Operators, All Other" = 9150,
+                 "TRN-Locomotive Engineers And Operators" = 9210,
+                 "TRN-Railroad Conductors And Yardmasters" = 9240,
+                 "TRN-Other Rail Transportation Workers" = 9265,
+                 "TRN-Sailors And Marine Oilers, And Ship Engineers" = 9300,
+                 "TRN-Ship And Boat Captains And Operators" = 9310,
+                 "TRN-Parking Lot Attendants" = 9350,
+                 "TRN-Transportation Service Attendants" = 9365,
+                 "TRN-Transportation Inspectors" = 9410,
+                 "TRN-Passenger Attendants" = 9415,
+                 "TRN-Other Transportation Workers" = 9430,
+                 "TRN-Crane And Tower Operators" = 9510,
+                 "TRN-Conveyor, Dredge, And Hoist and Winch Operators" = 9570,
+                 "TRN-Industrial Truck And Tractor Operators" = 9600,
+                 "TRN-Cleaners Of Vehicles And Equipment" = 9610,
+                 "TRN-Laborers And Freight, Stock, And Material Movers, Hand" = 9620,
+                 "TRN-Machine Feeders And Offbearers" = 9630,
+                 "TRN-Packers And Packagers, Hand" = 9640,
+                 "TRN-Stockers And Order Fillers" = 9645,
+                 "TRN-Pumping Station Operators" = 9650,
+                 "TRN-Refuse And Recyclable Material Collectors" = 9720,
+                 "TRN-Other Material Moving Workers" = 9760,
+                 "MIL-Military Officer Special And Tactical Operations Leaders" = 9800,
+                 "MIL-First-Line Enlisted Military Supervisors" = 9810,
+                 "MIL-Military Enlisted Tactical Operations And Air/Weapons Specialists And Crew Members" = 9825,
+                 "MIL-Military, Rank Not Specified" = 9830,
+                 "Unemployed And Last Worked 5 Years Ago Or Earlier Or Never Worked" = 9920
+                 )
+person.df$Occupation <- factor(person.df$Occupation, levels = recode.occp, labels = names(recode.occp))
+
+recode.schl <- c("No schooling completed" = "No schooling completed",
+                 "Some grade school" = "preschool",
+                 "Some grade school" = "Kindergarten",
+                 "Some grade school" = "Grade 1",
+                 "Some grade school" = "Grade 2",
+                 "Some grade school" = "Grade 3",
+                 "Some grade school" = "Grade 4",
+                 "Some grade school" = "Grade 5",
+                 "Some grade school" = "Grade 6",
+                 "Some grade school" = "Grade 7",
+                 "Some grade school" = "Grade 8",
+                 "Some high school" = "Grade 9",
+                 "Some high school" = "Grade 10",
+                 "Some high school" = "Grade 11",
+                 "Some high school" = "12th grade - no diploma", 
+                 "Regular high school diploma" = "Regular high school diploma",
+                 "GED" = "GED", 
+                 "Some college" = "Some college, but less than 1 year",
+                 "Some college" = "1 or more years of college credit, no degree",
+                 "Associate's degree" = "Associate's degree",
+                 "Bachelor's degree" = "Bachelor's degree",
+                 "Master's degree" = "Master's degree",
+                 "Professional degree beyond a bachelor's degree" = "Professional degree beyond a bachelor's degree",
+                 "Doctorate degree" = "Doctorate degree")
+person.df$`Educational Attainment` <- factor(person.df$`Educational Attainment`, levels = recode.schl, labels = names(recode.schl))
+
+```
+
+
+The following code mutates the financial data columns to account for the time value of money.
+This chunk of code also includes some binning to help with visualizations. 
+
+```{r, eval=FALSE}
+person.df <- person.df %>%
+  rename("Self-employment Income Past 12 Months Before" = "Self-employment Income Past 12 Months",
+         "Wage/Salary Income Past 12 Months Before" = "Wage/Salary Income Past 12 Months",
+         "Total Person's Income Before" = "Total Person's Income")
+person.df <- person.df %>%
+  mutate("Self-employment Income Past 12 Months" = (`Dollar Adjustment`/1000000)*`Self-employment Income Past 12 Months Before`,
+         "Wage/Salary Income Past 12 Months" = (`Dollar Adjustment`/1000000)*`Wage/Salary Income Past 12 Months Before`,
+         "Total Person's Income" = (`Dollar Adjustment`/1000000)*`Total Person's Income Before`) %>%
+  select(!c(`Total Person's Income Before`, `Wage/Salary Income Past 12 Months Before`, `Self-employment Income Past 12 Months Before`))
+
+b <- c(0, 17, 25, 35, 45, 55, 65, 75, 97)
+names <- c("Less than 17 years", "18-25 years", "26-35 years", "36-45 years", "46-55 years", "56-65 years", "66-75 years", "Older than 75")
+person.df$Age.bins <- cut(person.df$Age, breaks = b, labels = names)
+
+b1 <- c(1, 15, 35, 45, 60, 80, 97)
+names1 <- c("15 or less hours", "16 to 35 hours", "36 to 45 hours", "46 to 60 hours", "61 to 80 hours", "Over 80 hours")
+person.df$`Usual Hours Worked per Week Last Year Bins` <- cut(person.df$`Usual Hours Worked per Week Last Year`, breaks = b1, labels = names1)
+```
+
+
+The following code drops any rows of anyone under 18 years of age or did not work full time for most of last year. 
+```{r, eval=FALSE}
+person.df <- person.df %>%
+  filter(`Usual Hours Worked per Week Last Year Bins` != "15 or less hours" | `Usual Hours Worked per Week Last Year Bins` != "16 to 35 hours") %>%
+  filter(`Weeks Worked Last 12 Months` == "50 to 52 weeks" | `Weeks Worked Last 12 Months` == "48 to 49 weeks" | `Weeks Worked Last 12 Months` == "40 to 47 weeks") %>%
+  filter(Age > 17)
+
+person.df <- person.df %>%
+  drop_na(Occupation)
+
+person.df %>% 
+  filter(`Citizenship Status` == "Born in the U.S.")
+
+
+save(person.df, file = "person_df.RData")
+```
+
+
+### Part 2: Data exploration not used in the report
+
+```{r, eval=FALSE}
+ggplot(data = person.df, mapping = aes(x = Division, weight = `Person Weighting`)) +
+  geom_bar()
+
+ggplot(data = person.df, mapping = aes(x = State, weight = `Person Weighting`)) +
+  geom_bar()
+
+plot(x = person.df$`Wage/Salary Income Past 12 Months`, y = person.df$`Usual Hours Worked per Week Last Year`)
+
+ggplot(person.df, aes(x = Age, weight = `Person Weighting`)) +
+  geom_histogram()
+
+plot(x = person.df$`Wage/Salary Income Past 12 Months`, y = person.df$`Weeks Worked Last 12 Months`)
+
+ggplot(person.df, aes(`Educational Attainment`)) +
+  geom_bar()
+
+ggplot(person.df, aes(`Marital status`)) +
+  geom_bar()
+
+ggplot(person.df) +
+  geom_histogram(aes(x = "Nativity"), stat="count")
+
+ggplot(person.df) +
+  geom_histogram(aes(`Wage/Salary Income Past 12 Months`, weight = `Person Weighting`)) + 
+  facet_wrap(~Region)
+
+ggplot(person.df) +
+  geom_bar(aes(x = Region, weight = `Person Weighting`, fill = Gender)) +
+  ggtitle("Population by Gender and Region") + 
+  theme(axis.text.x = element_text(angle = 25)) + 
+  scale_y_continuous(labels = scales::comma)
+
+ggplot(person.df) +
+  geom_bar(aes(x = State, weight = `Person Weighting`, fill = Gender))  +
+  ggtitle("Population by Gender and State") + 
+  scale_y_continuous(labels = scales::comma) +
+  coord_flip()
+
+ggplot(person.df) +
+  geom_boxplot(aes(x = `Educational Attainment`, y = `Total Person's Income`)) +
+  scale_y_continuous(trans = 'log2', labels = scales::comma) +
+  coord_flip()
+
+ggplot(person.df) +
+  geom_point(aes(y = `Total Person's Income`, x = Age)) +
+  scale_y_continuous(labels = scales::comma)
+
+person.df %>%
+  group_by(`Usual Hours Worked per Week Last Year`, Nativity, Gender) %>%
+  summarise(AvgIncome = mean(`Total Person's Income`, na.rm = T)) %>%
+  ggplot(aes(fill = Nativity, y = AvgIncome, x = `Usual Hours Worked per Week Last Year`)) +
+  geom_bar(position="dodge", stat="identity") +
+  facet_wrap(~Gender) +
+  theme(axis.text.x = element_text(angle = 25)) +
+  scale_y_continuous(labels = scales::comma)
+
+
+person.df %>%
+  group_by(`Citizenship Status`, Nativity) %>%
+  summarise(AvgIncome = mean(`Total Person's Income`, na.rm = T)) %>%
+  spread(Nativity, AvgIncome)
+ggplot(person.df1) +
+  geom_boxplot(aes(x = Gender, y = `Total Person's Income`)) +
+  facet_wrap(~`Usual Hours Worked per Week Last Year`) + 
+  scale_y_continuous(trans = 'log2', labels = scales::comma)
+
+
+
+person.df %>%
+  group_by(Gender, `Educational Attainment`) %>%
+  summarise(AvgIncome = mean(`Total Person's Income`, na.rm = T)) %>%
+  spread(Gender, AvgIncome)
+person.df %>%
+  group_by(`Usual Hours Worked per Week Last Year`, Gender) %>%
+  summarise(AvgIncome = mean(`Total Person's Income`, na.rm = T)) %>%
+  spread(Gender, AvgIncome)  
+
+person.df %>%
+  group_by(`Usual Hours Worked per Week Last Year`, Gender) %>%
+  summarise(AvgIncome = mean(`Total Person's Income`, na.rm = T)) %>%
+  ggplot(aes(fill = Gender, y = AvgIncome, x = `Usual Hours Worked per Week Last Year`)) +
+  geom_bar(position="dodge", stat="identity") +
+  theme(axis.text.x = element_text(angle = 25)) +
+  scale_y_continuous(labels = scales::comma)
+
+
+person.df %>%
+  group_by(Age.bins, Gender, Nativity) %>%
+  summarise(AvgIncome = mean(`Total Person's Income`)) %>%
+  ggplot(aes(fill = Gender, x = Age.bins, y = AvgIncome)) +
+  geom_bar(position="dodge", stat="identity") +
+  theme(axis.text.x = element_text(angle = 45)) +
+  facet_wrap(~Nativity)
+
+```
+
